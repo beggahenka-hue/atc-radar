@@ -16,7 +16,9 @@ from config import (
     TRAIL_LENGTH,
     ZOOM_LEVELS_NM,
 )
+
 from display.radar_display import RadarDisplay
+from traffic.traffic_provider import TrafficProvider
 from map.map_data import load_map_layers
 from models import Aircraft
 from providers.opensky import OpenAIPProvider, OpenSkyProvider
@@ -402,10 +404,10 @@ def main():
     clock = pygame.time.Clock()
 
     display = RadarDisplay(screen)
-    traffic_provider = OpenSkyProvider()
+    opensky_provider = OpenSkyProvider()
     map_provider = OpenAIPProvider()
 
-    load_map_layers(map_provider, RADAR_CENTER_LAT, RADAR_CENTER_LON)
+    traffic_source = TrafficProvider(opensky_provider)
 
     center_lat = RADAR_CENTER_LAT
     center_lon = RADAR_CENTER_LON
@@ -432,7 +434,6 @@ def main():
 
     aircraft_dict = {}
     selected_icao24 = None
-    fetch_timer = FETCH_INTERVAL_MS
     last_wheel_time = 0
 
     dragging = False
@@ -445,7 +446,7 @@ def main():
     while running:
         dt_ms = clock.tick(FPS)
         dt_seconds = dt_ms / 1000.0
-        fetch_timer += dt_ms
+
         now_ms = pygame.time.get_ticks()
 
         for event in pygame.event.get():
@@ -665,21 +666,18 @@ def main():
             except Exception as e:
                 print("Map layer load error:", e)
 
-        if fetch_timer >= FETCH_INTERVAL_MS:
-            try:
-                fresh_aircraft = traffic_provider.fetch()
-                aircraft_dict = merge_aircraft(
-                    aircraft_dict,
-                    fresh_aircraft,
-                    center_lat,
-                    center_lon,
-                    range_nm,
-                )
-                set_selected_aircraft(aircraft_dict, selected_icao24)
-            except Exception as e:
-                print("OpenSky fetch error:", e)
+        now_ms = pygame.time.get_ticks()
+        fresh_aircraft = traffic_source.fetch_if_due(now_ms)
 
-            fetch_timer = 0
+        if fresh_aircraft is not None:
+            aircraft_dict = merge_aircraft(
+                aircraft_dict,
+                fresh_aircraft,
+                center_lat,
+                center_lon,
+                range_nm,
+            )
+            set_selected_aircraft(aircraft_dict, selected_icao24)
 
     pygame.quit()
     sys.exit()
