@@ -3,8 +3,14 @@ import math
 import pygame
 
 from utils import latlon_to_screen, latlon_to_screen_float, nm_distance
-from map_data import RUNWAYS, get_fixes, get_navaids, get_airspaces
-from map_data import COASTLINES, WATER_AREAS
+from map.map_data import (
+    COASTLINES,
+    WATER_AREAS,
+    RUNWAYS,
+    get_fixes,
+    get_navaids,
+    get_airspaces,
+)
 from config import DIM_GREEN, TEXT_DIM
 
 
