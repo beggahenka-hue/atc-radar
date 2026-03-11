@@ -1,8 +1,10 @@
 import math
 import sys
+import time
 
 import pygame
 
+from traffic import merge_aircraft
 from config import (
     BG_DARK,
     DEFAULT_RANGE_NM,
@@ -15,7 +17,7 @@ from display.radar_display import RadarDisplay
 from map.map_data import load_map_layers
 from map.tiles import build_basemap_surface
 from providers.opensky import OpenAIPProvider, OpenSkyProvider
-from traffic.traffic_manager import TrafficManager
+from traffic.traffic_provider import TrafficProvider
 from utils import (
     get_declutter_profile,
     latlon_to_screen,
@@ -26,10 +28,10 @@ from utils import (
     world_pixels_to_latlon,
 )
 
-FETCH_INTERVAL_MS = 10000
 CLICK_RADIUS_PX = 15
 WHEEL_DEBOUNCE_MS = 90
 BASEMAP_IDLE_REBUILD_MS = 180
+
 
 def update_aircraft_trails(aircraft_dict, center_lat, center_lon, zoom, screen_w, screen_h):
     visible_aircraft = []
@@ -37,7 +39,6 @@ def update_aircraft_trails(aircraft_dict, center_lat, center_lon, zoom, screen_w
 
     for ac in aircraft_dict.values():
         lat, lon = ac.get_smoothed_position(now)
-
         if lat is None or lon is None:
             continue
 
@@ -58,7 +59,6 @@ def update_aircraft_trails(aircraft_dict, center_lat, center_lon, zoom, screen_w
             else:
                 prev_lat, prev_lon = ac.trail[-1]
                 moved_nm = nm_distance(prev_lat, prev_lon, lat, lon)
-
                 if moved_nm >= 0.03:
                     ac.trail.append((lat, lon))
                     ac.last_trail_time = now
@@ -76,7 +76,6 @@ def find_clicked_aircraft(aircraft_dict, mouse_pos, center_lat, center_lon, zoom
     for ac in aircraft_dict.values():
         lat = ac.lat
         lon = ac.lon
-
         if lat is None or lon is None:
             continue
 
@@ -127,21 +126,12 @@ def rebuild_basemap_if_needed(display, center_lat, center_lon, range_nm, screen)
     if basemap_surface is None:
         return None
 
-    # Lätt tonad så radaroverlay fortfarande dominerar visuellt
     basemap_surface = basemap_surface.convert_alpha()
     basemap_surface.set_alpha(90)
-
     return basemap_surface
 
 
 def get_basemap_offset(current_center_lat, current_center_lon, basemap_center, range_nm, screen_w, screen_h):
-    """
-    Beräkna hur mycket en redan renderad basemap ska förskjutas på skärmen
-    när radarcentrum har ändrats sedan basemapen byggdes.
-
-    Vi räknar offset direkt i world pixels för att få samma geometri som
-    tile-systemet och minska känslan av glidning vid pan/zoom.
-    """
     if basemap_center is None:
         return 0, 0
 
@@ -153,7 +143,6 @@ def get_basemap_offset(current_center_lat, current_center_lon, basemap_center, r
 
     offset_x = int(round(basemap_wx - current_wx))
     offset_y = int(round(basemap_wy - current_wy))
-
     return offset_x, offset_y
 
 
@@ -161,7 +150,6 @@ def draw_scene(display, aircraft_dict, center_lat, center_lon, range_nm, basemap
     zoom = range_nm_to_zoom(range_nm)
     declutter = get_declutter_profile(range_nm)
 
-    # Gör aktuell visning tillgänglig för render-funktionerna
     display.current_range_nm = range_nm
     display.current_zoom = zoom
     display.current_center_lat = center_lat
@@ -179,10 +167,8 @@ def draw_scene(display, aircraft_dict, center_lat, center_lon, range_nm, basemap
         screen_h,
     )
 
-    # Basrensning
     display.screen.fill(BG_DARK)
 
-    # Basemap först
     if display.layer_states.get("Basemap", True) and basemap_surface:
         offset_x, offset_y = get_basemap_offset(
             center_lat,
@@ -194,9 +180,6 @@ def draw_scene(display, aircraft_dict, center_lat, center_lon, range_nm, basemap
         )
         display.screen.blit(basemap_surface, (offset_x, offset_y))
 
-    # HMI / bakgrund
-    # Viktigt att detta kommer innan labels börjar ritas,
-    # eftersom label_rects nollställs här.
     display.draw_background(
         center_lat,
         center_lon,
@@ -208,46 +191,36 @@ def draw_scene(display, aircraft_dict, center_lat, center_lon, range_nm, basemap
         alarm=None,
     )
 
-    # Kartlager
     if display.layer_states.get("Basemap", True):
         display.draw_coastline_and_water(center_lat, center_lon, zoom, range_nm)
-
     if display.layer_states.get("Airspaces", True):
         display.draw_airspaces(center_lat, center_lon, zoom, range_nm, declutter)
-
     if display.layer_states.get("ILS", True):
         display.draw_ils_layers(center_lat, center_lon, zoom, range_nm)
-
     if display.layer_states.get("Runways", True):
         display.draw_runways(center_lat, center_lon, zoom, range_nm)
-
     if display.layer_states.get("Fixes", True):
         display.draw_fixes(center_lat, center_lon, zoom, range_nm, declutter)
-
     if display.layer_states.get("Navaids", True):
         display.draw_navaids(center_lat, center_lon, zoom, range_nm, declutter)
 
-    # Targets
     selected_aircraft = None
 
-    # Rita först alla oselekterade targets
     for ac, sx, sy in visible_aircraft:
         if not ac.selected:
             display.draw_aircraft(ac, sx, sy, declutter, center_lat, center_lon, zoom)
 
-    # Rita vald target sist så den hamnar överst
     for ac, sx, sy in visible_aircraft:
         if ac.selected:
             display.draw_aircraft(ac, sx, sy, declutter, center_lat, center_lon, zoom)
             selected_aircraft = ac
 
-    # Sweep ovanpå kartlager/targets
     if display.layer_states.get("Sweep", True):
         display.draw_sweep()
 
-    # Paneler sist
     display.draw_info_panel(selected_aircraft)
     display.draw_layer_panel()
+
 
 def get_pan_speed_nm_per_sec(range_nm, fast=False):
     base = max(2.0, range_nm * 0.9)
@@ -303,7 +276,6 @@ def get_pixels_per_nm(center_lat, center_lon, range_nm, screen_w, screen_h):
         screen_w,
         screen_h,
     )
-
     _, y1 = latlon_to_screen(
         center_lat + (1.0 / 60.0),
         center_lon,
@@ -318,14 +290,7 @@ def get_pixels_per_nm(center_lat, center_lon, range_nm, screen_w, screen_h):
     return max(px_per_nm, 0.01)
 
 
-def apply_mouse_drag_pan(
-    drag_start_mouse,
-    drag_start_center,
-    mouse_pos,
-    range_nm,
-    screen_w,
-    screen_h,
-):
+def apply_mouse_drag_pan(drag_start_mouse, drag_start_center, mouse_pos, range_nm, screen_w, screen_h):
     if not drag_start_mouse or not drag_start_center:
         return drag_start_center[0], drag_start_center[1]
 
@@ -336,14 +301,7 @@ def apply_mouse_drag_pan(
     dy = my - start_my
 
     start_lat, start_lon = drag_start_center
-
-    px_per_nm = get_pixels_per_nm(
-        start_lat,
-        start_lon,
-        range_nm,
-        screen_w,
-        screen_h,
-    )
+    px_per_nm = get_pixels_per_nm(start_lat, start_lon, range_nm, screen_w, screen_h)
 
     move_nm_x = -dx / px_per_nm
     move_nm_y = dy / px_per_nm
@@ -355,7 +313,6 @@ def apply_mouse_drag_pan(
         cos_lat = 0.1
 
     new_lon = start_lon + (move_nm_x / (60.0 * cos_lat))
-
     return new_lat, new_lon
 
 
@@ -376,7 +333,6 @@ def zoom_about_mouse(center_lat, center_lon, old_range_nm, new_range_nm, mouse_p
     )
 
     target_wx, target_wy = latlon_to_world_pixels(target_lat, target_lon, new_zoom)
-
     new_center_wx = target_wx - (mx - screen_w / 2)
     new_center_wy = target_wy - (my - screen_h / 2)
 
@@ -393,13 +349,12 @@ def main():
     pygame.init()
 
     screen = pygame.display.set_mode((1400, 900))
-    pygame.display.set_caption("ATC Radar v3")
+    pygame.display.set_caption("ATC Radar v4")
     clock = pygame.time.Clock()
 
     display = RadarDisplay(screen)
     opensky_provider = OpenSkyProvider()
     map_provider = OpenAIPProvider()
-
     traffic_source = TrafficProvider(opensky_provider)
 
     center_lat = RADAR_CENTER_LAT
@@ -439,7 +394,6 @@ def main():
     while running:
         dt_ms = clock.tick(FPS)
         dt_seconds = dt_ms / 1000.0
-
         now_ms = pygame.time.get_ticks()
 
         for event in pygame.event.get():
@@ -507,7 +461,6 @@ def main():
                         screen.get_width(),
                         screen.get_height(),
                     )
-
                     selected_icao24 = clicked.icao24 if clicked else None
                     set_selected_aircraft(aircraft_dict, selected_icao24)
 
@@ -519,8 +472,8 @@ def main():
                 elif event.button in (4, 5):
                     if now_ms - last_wheel_time < WHEEL_DEBOUNCE_MS:
                         continue
-                    last_wheel_time = now_ms
 
+                    last_wheel_time = now_ms
                     old_range = range_nm
                     old_center_lat = center_lat
                     old_center_lon = center_lon
@@ -590,6 +543,7 @@ def main():
                 dt_seconds,
                 keys,
             )
+
             if key_center_changed:
                 center_lat = new_center_lat
                 center_lon = new_center_lon
@@ -641,6 +595,28 @@ def main():
             basemap_range_nm = range_nm
             basemap_dirty = False
 
+        if not map_layers_loaded:
+            try:
+                load_map_layers(map_provider, center_lat, center_lon)
+                map_layers_loaded = True
+            except Exception as e:
+                print("Map layer load error:", e)
+
+        fresh_aircraft = traffic_source.fetch_if_due(now_ms)
+        if fresh_aircraft is not None:
+            aircraft_dict = merge_aircraft(
+                aircraft_dict,
+                fresh_aircraft,
+                center_lat,
+                center_lon,
+                range_nm,
+            )
+
+        if selected_icao24 and selected_icao24 not in aircraft_dict:
+            selected_icao24 = None
+
+        set_selected_aircraft(aircraft_dict, selected_icao24)
+
         draw_scene(
             display,
             aircraft_dict,
@@ -650,30 +626,12 @@ def main():
             basemap_surface,
             basemap_center,
         )
+
         pygame.display.flip()
-
-        if not map_layers_loaded:
-            try:
-                load_map_layers(map_provider, center_lat, center_lon)
-                map_layers_loaded = True
-            except Exception as e:
-                print("Map layer load error:", e)
-
-        now_ms = pygame.time.get_ticks()
-        fresh_aircraft = traffic_source.fetch_if_due(now_ms)
-
-        if fresh_aircraft is not None:
-            aircraft_dict = merge_aircraft(
-                aircraft_dict,
-                fresh_aircraft,
-                center_lat,
-                center_lon,
-                range_nm,
-            )
-            set_selected_aircraft(aircraft_dict, selected_icao24)
 
     pygame.quit()
     sys.exit()
+
 
 if __name__ == "__main__":
     main()
