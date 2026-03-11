@@ -6,7 +6,7 @@ from collections import deque
 import pygame
 
 
-from traffic.tracker import merge_aircraft
+from traffic import merge_aircraft
 from config import (
     BG_DARK,
     DEFAULT_RANGE_NM,
