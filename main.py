@@ -17,7 +17,7 @@ from config import (
     ZOOM_LEVELS_NM,
 )
 from display.radar_display import RadarDisplay
-from map.map_data import load_airspaces, load_fixes, load_navaids
+from map.map_data import load_map_layers
 from models import Aircraft
 from providers.opensky import OpenAIPProvider, OpenSkyProvider
 from map.tiles import build_basemap_surface
@@ -35,44 +35,6 @@ FETCH_INTERVAL_MS = 10000
 CLICK_RADIUS_PX = 15
 WHEEL_DEBOUNCE_MS = 90
 BASEMAP_IDLE_REBUILD_MS = 180
-
-def load_map_layers(openaip, center_lat, center_lon):
-    lat_margin = 1.0
-    lon_margin = 1.5
-
-    try:
-        load_fixes(
-            openaip,
-            center_lat - lat_margin,
-            center_lat + lat_margin,
-            center_lon - lon_margin,
-            center_lon + lon_margin,
-        )
-    except Exception as e:
-        print("FIXES load error:", e)
-
-    try:
-        load_navaids(
-            openaip,
-            center_lat - lat_margin,
-            center_lat + lat_margin,
-            center_lon - lon_margin,
-            center_lon + lon_margin,
-        )
-    except Exception as e:
-        print("NAVAIDS load error:", e)
-
-    try:
-        load_airspaces(
-            openaip,
-            center_lat - lat_margin,
-            center_lat + lat_margin,
-            center_lon - lon_margin,
-            center_lon + lon_margin,
-        )
-    except Exception as e:
-        print("AIRSPACES load error:", e)
-
 
 def update_aircraft_trails(aircraft_dict, center_lat, center_lon, zoom, screen_w, screen_h):
     visible_aircraft = []
@@ -442,6 +404,8 @@ def main():
     display = RadarDisplay(screen)
     traffic_provider = OpenSkyProvider()
     map_provider = OpenAIPProvider()
+
+    load_map_layers(map_provider, RADAR_CENTER_LAT, RADAR_CENTER_LON)
 
     center_lat = RADAR_CENTER_LAT
     center_lon = RADAR_CENTER_LON

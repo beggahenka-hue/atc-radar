@@ -189,3 +189,40 @@ def load_fixes(openaip_provider, lamin, lamax, lomin, lomax):
 
 def get_fixes():
     return FIXES
+
+def load_map_layers(openaip, center_lat, center_lon):
+    lat_margin = 1.0
+    lon_margin = 1.5
+
+    try:
+        load_fixes(
+            openaip,
+            center_lat - lat_margin,
+            center_lat + lat_margin,
+            center_lon - lon_margin,
+            center_lon + lon_margin,
+        )
+    except Exception as e:
+        print("FIXES load error:", e)
+
+    try:
+        load_navaids(
+            openaip,
+            center_lat - lat_margin,
+            center_lat + lat_margin,
+            center_lon - lon_margin,
+            center_lon + lon_margin,
+        )
+    except Exception as e:
+        print("NAVAIDS load error:", e)
+
+    try:
+        load_airspaces(
+            openaip,
+            center_lat - lat_margin,
+            center_lat + lat_margin,
+            center_lon - lon_margin,
+            center_lon + lon_margin,
+        )
+    except Exception as e:
+        print("AIRSPACES load error:", e)
