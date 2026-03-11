@@ -20,7 +20,7 @@ from display.radar_display import RadarDisplay
 from map.map_data import load_airspaces, load_fixes, load_navaids
 from models import Aircraft
 from providers.opensky import OpenAIPProvider, OpenSkyProvider
-from tile_provider import build_basemap_surface
+from map.tiles import build_basemap_surface
 from utils import (
     get_declutter_profile,
     latlon_to_screen,
