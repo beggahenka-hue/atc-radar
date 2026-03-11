@@ -72,8 +72,6 @@ SHOW_SWEEP = False
 SHOW_LABELS = True
 
 # API credentials
-OPENSKY_CLIENT_ID = "henrikberggren-api-client"
-
 import os
 from dotenv import load_dotenv
 
@@ -81,3 +79,4 @@ load_dotenv()
 
 OPENSKY_CLIENT_ID = os.getenv("OPENSKY_CLIENT_ID", "")
 OPENSKY_CLIENT_SECRET = os.getenv("OPENSKY_CLIENT_SECRET", "")
+OPENAIP_API_KEY = os.getenv("OPENAIP_API_KEY", "")
