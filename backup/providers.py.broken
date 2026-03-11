@@ -1,0 +1,61 @@
+import requests
+from models import Aircraft
+from config import LAMIN, LAMAX, LOMIN, LOMAX
+
+OPEN_SKY_URL = (
+    f"https://opensky-network.org/api/states/all?"
+    f"lamin={LAMIN}&lomin={LOMIN}&lamax={LAMAX}&lomax={LOMAX}"
+)
+
+_tracks = {}
+
+
+def fetch_opensky_aircraft():
+    global _tracks
+
+    try:
+        response = requests.get(OPEN_SKY_URL, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+    except Exception as e:
+        print("OpenSky error:", e)
+        return list(_tracks.values())
+
+    seen = set()
+
+    for state in data.get("states", []):
+        icao24 = state[0]
+        callsign = state[1].strip() if state[1] else "UNKNOWN"
+        lon = state[5]
+        lat = state[6]
+        baro_alt = state[7]
+        velocity = state[9]
+        heading = state[10]
+
+        if lat is None or lon is None or icao24 is None:
+            continue
+
+        altitude_ft = round(baro_alt * 3.28084) if baro_alt is not None else 0
+        speed_kt = round(velocity * 1.94384) if velocity is not None else 0
+
+        if icao24 in _tracks:
+            _tracks[icao24].callsign = callsign
+            _tracks[icao24].update_position(lat, lon, altitude_ft, speed_kt, heading)
+        else:
+            _tracks[icao24] = Aircraft(
+                icao24=icao24,
+                callsign=callsign,
+                lat=lat,
+                lon=lon,
+                altitude_ft=altitude_ft,
+                speed_kt=speed_kt,
+                heading=heading,
+            )
+
+        seen.add(icao24)
+
+    stale = [icao for icao in _tracks if icao not in seen]
+    for icao in stale:
+        del _tracks[icao]
+
+    return list(_tracks.values())

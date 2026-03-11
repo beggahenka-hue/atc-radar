@@ -1,0 +1,44 @@
+import requests
+from config import LAMIN, LAMAX, LOMIN, LOMAX
+
+OPENSKY_URL = "https://opensky-network.org/api/states/all"
+
+
+def fetch_opensky_states():
+    try:
+        params = {
+            "lamin": LAMIN,
+            "lamax": LAMAX,
+            "lomin": LOMIN,
+            "lomax": LOMAX,
+        }
+
+        r = requests.get(OPENSKY_URL, params=params, timeout=10)
+
+        data = r.json()
+
+        flights = []
+
+        if data["states"] is None:
+            return flights
+
+        for s in data["states"]:
+            flight = {
+                "icao24": s[0],
+                "callsign": s[1].strip() if s[1] else "",
+                "lon": s[5],
+                "lat": s[6],
+                "altitude": s[7],
+                "velocity": s[9],
+                "heading": s[10],
+            }
+
+            if flight["lat"] and flight["lon"]:
+                flights.append(flight)
+
+        return flights
+
+    except Exception as e:
+        print("OpenSky error:", e)
+        return []
+

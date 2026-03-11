@@ -1,0 +1,155 @@
+import sys
+import pygame
+from config import WIDTH, HEIGHT, FPS, TRAIL_LENGTH
+from models import Aircraft
+from display import RadarDisplay
+from providers import fetch_opensky_states
+from utils import latlon_to_screen, nm_distance
+
+
+def merge_aircraft(existing_dict, new_states, center_lat, center_lon, range_nm):
+    updated = {}
+
+    for state in new_states:
+        icao24 = state.get("icao24")
+        callsign = state.get("callsign", "").strip()
+        lat = state.get("lat")
+        lon = state.get("lon")
+        altitude = state.get("altitude")
+        velocity = state.get("velocity")
+        heading = state.get("heading")
+
+        if not icao24 or lat is None or lon is None:
+            continue
+
+        # filtrera på radar range
+        dist = nm_distance(center_lat, center_lon, lat, lon)
+        if dist > range_nm:
+            continue
+
+        if icao24 in existing_dict:
+            ac = existing_dict[icao24]
+            ac.callsign = callsign
+            ac.update_position(lat, lon, altitude, velocity, heading)
+        else:
+            ac = Aircraft(
+                icao24=icao24,
+                callsign=callsign,
+                lat=lat,
+                lon=lon,
+                altitude=altitude,
+                velocity=velocity,
+                heading=heading,
+            )
+            ac.trail = ac.trail.__class__(maxlen=TRAIL_LENGTH)
+
+        updated[icao24] = ac
+
+    return updated
+
+
+def main():
+    pygame.init()
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption("ATC Radar v3")
+    clock = pygame.time.Clock()
+
+    display = RadarDisplay(screen)
+
+    center_lat = 58.586
+    center_lon = 16.250
+    range_nm = 40
+
+    aircraft_dict = {}
+    selected_icao24 = None
+
+    fetch_timer = 0
+    fetch_interval_ms = 10000  # 10 sek
+
+    running = True
+    while running:
+        dt = clock.tick(FPS)
+        fetch_timer += dt
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mx, my = pygame.mouse.get_pos()
+
+                if event.button == 1:
+                    clicked = None
+                    min_dist = 15
+
+                    for ac in aircraft_dict.values():
+                        sx, sy = latlon_to_screen(ac.lat, ac.lon, center_lat, center_lon, range_nm, WIDTH, HEIGHT)
+                        d = ((mx - sx) ** 2 + (my - sy) ** 2) ** 0.5
+                        if d < min_dist:
+                            clicked = ac
+                            min_dist = d
+
+                    for ac in aircraft_dict.values():
+                        ac.selected = False
+
+                    if clicked:
+                        clicked.selected = True
+                        selected_icao24 = clicked.icao24
+                    else:
+                        selected_icao24 = None
+
+                elif event.button == 4:  # scroll up
+                    range_nm = max(10, range_nm - 5)
+                elif event.button == 5:  # scroll down
+                    range_nm = min(160, range_nm + 5)
+
+        if fetch_timer >= fetch_interval_ms:
+            try:
+                states = fetch_opensky_states()
+                aircraft_dict = merge_aircraft(
+                    aircraft_dict,
+                    states,
+                    center_lat,
+                    center_lon,
+                    range_nm
+                )
+
+                if selected_icao24 and selected_icao24 in aircraft_dict:
+                    aircraft_dict[selected_icao24].selected = True
+
+            except Exception as e:
+                print("OpenSky fetch error:", e)
+
+            fetch_timer = 0
+
+        display.draw_background()
+        display.draw_sweep()
+
+        selected_aircraft = None
+
+        for ac in aircraft_dict.values():
+            sx, sy = latlon_to_screen(ac.lat, ac.lon, center_lat, center_lon, range_nm, WIDTH, HEIGHT)
+
+            # Lägg till position i trail bara om den skiljer sig lite från senaste
+            if len(ac.trail) == 0:
+                ac.trail.append((sx, sy))
+            else:
+                last_x, last_y = ac.trail[-1]
+                if abs(sx - last_x) > 1 or abs(sy - last_y) > 1:
+                    ac.trail.append((sx, sy))
+
+            display.draw_aircraft(ac, sx, sy)
+
+            if ac.selected:
+                selected_aircraft = ac
+
+        display.draw_info_panel(selected_aircraft)
+
+        pygame.display.flip()
+
+    pygame.quit()
+    sys.exit()
+
+
+if __name__ == "__main__":
+    main()

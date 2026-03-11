@@ -1,0 +1,28 @@
+import math
+
+
+def nm_distance(lat1, lon1, lat2, lon2):
+    r = 3440.065  # jordradie i nautiska mil
+
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return r * c
+
+
+def latlon_to_screen(lat, lon, center_lat, center_lon, range_nm, width, height):
+    dx_nm = (lon - center_lon) * 60 * math.cos(math.radians(center_lat))
+    dy_nm = (lat - center_lat) * 60
+
+    radar_radius_px = min(width, height) // 2 - 80
+    scale = radar_radius_px / range_nm
+
+    x = width // 2 + dx_nm * scale
+    y = height // 2 - dy_nm * scale
+
+    return int(x), int(y)
