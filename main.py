@@ -1,28 +1,21 @@
 import math
 import sys
-import time
-from collections import deque
 
 import pygame
 
-
-from traffic import merge_aircraft
 from config import (
     BG_DARK,
     DEFAULT_RANGE_NM,
     FPS,
     RADAR_CENTER_LAT,
     RADAR_CENTER_LON,
-    TRAIL_LENGTH,
     ZOOM_LEVELS_NM,
 )
-
 from display.radar_display import RadarDisplay
-from traffic.traffic_provider import TrafficProvider
 from map.map_data import load_map_layers
-from models import Aircraft
-from providers.opensky import OpenAIPProvider, OpenSkyProvider
 from map.tiles import build_basemap_surface
+from providers.opensky import OpenAIPProvider, OpenSkyProvider
+from traffic.traffic_manager import TrafficManager
 from utils import (
     get_declutter_profile,
     latlon_to_screen,
