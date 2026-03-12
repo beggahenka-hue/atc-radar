@@ -13,7 +13,7 @@ from traffic.traffic_manager import TrafficManager
 from providers.opensky import OpenAIPProvider, OpenSkyProvider
 from utils import get_declutter_profile, range_nm_to_zoom
 
-from main_draw import draw_scene
+from display.render_scene import draw_scene
 
 
 def main():
@@ -64,7 +64,26 @@ def main():
                     map_manager.reset_view(now_ms)
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                map_manager.handle_mouse_down(event, now_ms)
+                if event.button == 1:
+                    if display.handle_click(event.pos):
+                        map_manager.handle_layer_toggle()
+                        continue
+
+                    zoom = range_nm_to_zoom(map_manager.range_nm)
+                    clicked = find_clicked_aircraft(
+                        aircraft_dict,
+                        event.pos,
+                        map_manager.center_lat,
+                        map_manager.center_lon,
+                        zoom,
+                        screen.get_width(),
+                        screen.get_height(),
+                    )
+                    selected_icao24 = clicked.icao24 if clicked else None
+                    set_selected_aircraft(aircraft_dict, selected_icao24)
+
+                else:
+                    map_manager.handle_mouse_down(event, now_ms)
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 map_manager.handle_mouse_up(event, now_ms)
@@ -73,7 +92,6 @@ def main():
                 map_manager.handle_mouse_motion(event, now_ms)
 
         keys = pygame.key.get_pressed()
-
         map_manager.update(dt_seconds, keys, now_ms)
 
         if not map_layers_loaded:
@@ -81,7 +99,7 @@ def main():
                 load_map_layers(
                     map_provider,
                     map_manager.center_lat,
-                    map_manager.center_lon
+                    map_manager.center_lon,
                 )
                 map_layers_loaded = True
             except Exception as e:
