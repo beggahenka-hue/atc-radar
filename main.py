@@ -4,7 +4,6 @@ import time
 
 import pygame
 
-
 from config import (
     BG_DARK,
     DEFAULT_RANGE_NM,
@@ -14,9 +13,10 @@ from config import (
     ZOOM_LEVELS_NM,
 )
 from display.radar_display import RadarDisplay
+from map.tiles import build_basemap_surface
+from map.map_manager import MapManager
 from map.map_data import load_map_layers
 from traffic.traffic_manager import TrafficManager
-from map.tiles import build_basemap_surface
 from providers.opensky import OpenAIPProvider, OpenSkyProvider
 from utils import (
     get_declutter_profile,
@@ -31,7 +31,6 @@ from utils import (
 CLICK_RADIUS_PX = 15
 WHEEL_DEBOUNCE_MS = 90
 BASEMAP_IDLE_REBUILD_MS = 180
-
 
 def update_aircraft_trails(aircraft_dict, center_lat, center_lon, zoom, screen_w, screen_h):
     visible_aircraft = []
