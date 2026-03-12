@@ -4,7 +4,7 @@ import time
 
 import pygame
 
-from traffic import merge_aircraft
+
 from config import (
     BG_DARK,
     DEFAULT_RANGE_NM,
@@ -15,9 +15,9 @@ from config import (
 )
 from display.radar_display import RadarDisplay
 from map.map_data import load_map_layers
+from traffic.traffic_manager import TrafficManager
 from map.tiles import build_basemap_surface
 from providers.opensky import OpenAIPProvider, OpenSkyProvider
-from traffic.traffic_provider import TrafficProvider
 from utils import (
     get_declutter_profile,
     latlon_to_screen,
@@ -355,7 +355,8 @@ def main():
     display = RadarDisplay(screen)
     opensky_provider = OpenSkyProvider()
     map_provider = OpenAIPProvider()
-    traffic_source = TrafficProvider(opensky_provider)
+
+    traffic_manager = TrafficManager(opensky_provider)
 
     center_lat = RADAR_CENTER_LAT
     center_lon = RADAR_CENTER_LON
@@ -380,7 +381,7 @@ def main():
         basemap_center = (center_lat, center_lon)
         basemap_range_nm = range_nm
 
-    aircraft_dict = {}
+    aircraft_dict = traffic_manager.get_aircraft()
     selected_icao24 = None
     last_wheel_time = 0
 
@@ -602,15 +603,7 @@ def main():
             except Exception as e:
                 print("Map layer load error:", e)
 
-        fresh_aircraft = traffic_source.fetch_if_due(now_ms)
-        if fresh_aircraft is not None:
-            aircraft_dict = merge_aircraft(
-                aircraft_dict,
-                fresh_aircraft,
-                center_lat,
-                center_lon,
-                range_nm,
-            )
+        aircraft_dict = traffic_manager.update(now_ms)
 
         if selected_icao24 and selected_icao24 not in aircraft_dict:
             selected_icao24 = None
